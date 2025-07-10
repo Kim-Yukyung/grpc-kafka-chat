@@ -43,10 +43,11 @@ type User struct {
 
 // 채팅방 정보 구조체
 type Room struct {
-	ID      string
-	Name    string
-	Users   map[string]*User
-	Created time.Time
+	ID        string
+	Name      string
+	CreatorID string
+	Users     map[string]*User
+	Created   time.Time
 }
 
 // 새로운 채팅 서비스 인스턴스 생성
@@ -106,6 +107,27 @@ func (s *ChatService) SendMessage(ctx context.Context, req *pb.SendMessageReques
 		}, nil
 	}
 	
+	// 채팅방 존재 및 참여 여부 확인
+	s.roomsMux.RLock()
+	room, roomExists := s.rooms[req.RoomId]
+	if !roomExists {
+		s.roomsMux.RUnlock()
+		return &pb.SendMessageResponse{
+			Success: false,
+			Error:   "존재하지 않는 채팅방입니다",
+		}, nil
+	}
+	
+	// 사용자가 채팅방에 참여 중인지 확인
+	if _, joined := room.Users[req.UserId]; !joined {
+		s.roomsMux.RUnlock()
+		return &pb.SendMessageResponse{
+			Success: false,
+			Error:   "채팅방에 참여하지 않은 사용자입니다",
+		}, nil
+	}
+	s.roomsMux.RUnlock()
+	
 	// 메시지 생성
 	messageID := uuid.New().String()
 	message := &pb.ChatMessage{
@@ -127,6 +149,7 @@ func (s *ChatService) SendMessage(ctx context.Context, req *pb.SendMessageReques
 }
 
 // 메시지 스트림 구독 요청 처리
+// 특정 채팅방에서 실시간 메시지 수신을 위한 구독 채널 생성 및 메시지 스트리밍
 func (s *ChatService) SubscribeToMessages(req *pb.SubscribeRequest, stream pb.ChatService_SubscribeToMessagesServer) error {
 	// 사용자 존재 확인
 	s.usersMux.RLock()
@@ -136,6 +159,21 @@ func (s *ChatService) SubscribeToMessages(req *pb.SubscribeRequest, stream pb.Ch
 	if !exists {
 		return fmt.Errorf("존재하지 않는 사용자입니다")
 	}
+	
+	// 채팅방 존재 및 참여 여부 확인
+	s.roomsMux.RLock()
+	room, roomExists := s.rooms[req.RoomId]
+	if !roomExists {
+		s.roomsMux.RUnlock()
+		return fmt.Errorf("존재하지 않는 채팅방입니다")
+	}
+	
+	// 사용자가 채팅방에 참여 중인지 확인
+	if _, joined := room.Users[req.UserId]; !joined {
+		s.roomsMux.RUnlock()
+		return fmt.Errorf("채팅방에 참여하지 않은 사용자입니다")
+	}
+	s.roomsMux.RUnlock()
 	
 	// 스트림 채널 생성
 	messageChan := make(chan *pb.ChatMessage, 100)
@@ -205,4 +243,190 @@ func (s *ChatService) broadcastMessage(roomID string, message *pb.ChatMessage) {
 			}
 		}
 	}
+}
+
+// 채팅방 생성 요청 처리
+func (s *ChatService) CreateRoom(ctx context.Context, req *pb.CreateRoomRequest) (*pb.CreateRoomResponse, error) {
+	// 사용자 존재 확인
+	s.usersMux.RLock()
+	_, exists := s.users[req.CreatorId]
+	s.usersMux.RUnlock()
+	
+	if !exists {
+		return &pb.CreateRoomResponse{
+			Success: false,
+			Error:   "존재하지 않는 사용자입니다",
+		}, nil
+	}
+	
+	// 채팅방 생성
+	roomID := uuid.New().String()
+	room := &Room{
+		ID:        roomID,
+		Name:      req.Name,
+		CreatorID: req.CreatorId,
+		Users:     make(map[string]*User),
+		Created:   time.Now(),
+	}
+	
+	// 생성자를 채팅방에 자동으로 추가
+	s.usersMux.RLock()
+	if user, userExists := s.users[req.CreatorId]; userExists {
+		room.Users[req.CreatorId] = user
+	}
+	s.usersMux.RUnlock()
+	
+	s.roomsMux.Lock()
+	s.rooms[roomID] = room
+	s.roomsMux.Unlock()
+	
+	return &pb.CreateRoomResponse{
+		Success: true,
+		RoomId:  roomID,
+	}, nil
+}
+
+// 채팅방 참여 요청 처리
+func (s *ChatService) JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*pb.JoinRoomResponse, error) {
+	// 사용자 존재 확인
+	s.usersMux.RLock()
+	user, userExists := s.users[req.UserId]
+	s.usersMux.RUnlock()
+	
+	if !userExists {
+		return &pb.JoinRoomResponse{
+			Success: false,
+			Error:   "존재하지 않는 사용자입니다",
+		}, nil
+	}
+	
+	// 채팅방 존재 확인
+	s.roomsMux.Lock()
+	defer s.roomsMux.Unlock()
+	
+	room, roomExists := s.rooms[req.RoomId]
+	if !roomExists {
+		return &pb.JoinRoomResponse{
+			Success: false,
+			Error:   "존재하지 않는 채팅방입니다",
+		}, nil
+	}
+	
+	// 이미 참여 중인지 확인
+	if _, alreadyJoined := room.Users[req.UserId]; alreadyJoined {
+		return &pb.JoinRoomResponse{
+			Success: false,
+			Error:   "이미 참여 중인 채팅방입니다",
+		}, nil
+	}
+	
+	// 채팅방에 사용자 추가
+	room.Users[req.UserId] = user
+	
+	return &pb.JoinRoomResponse{
+		Success: true,
+	}, nil
+}
+
+// 채팅방 나가기 요청 처리
+func (s *ChatService) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (*pb.LeaveRoomResponse, error) {
+	s.roomsMux.Lock()
+	defer s.roomsMux.Unlock()
+	
+	room, roomExists := s.rooms[req.RoomId]
+	if !roomExists {
+		return &pb.LeaveRoomResponse{
+			Success: false,
+			Error:   "존재하지 않는 채팅방입니다",
+		}, nil
+	}
+	
+	// 사용자가 채팅방에 참여 중인지 확인
+	if _, joined := room.Users[req.UserId]; !joined {
+		return &pb.LeaveRoomResponse{
+			Success: false,
+			Error:   "참여하지 않은 채팅방입니다",
+		}, nil
+	}
+	
+	// 채팅방에서 사용자 제거
+	delete(room.Users, req.UserId)
+	
+	// 스트림에서도 제거
+	s.streamsMux.Lock()
+	if streams, exists := s.streams[req.RoomId]; exists {
+		delete(streams, req.UserId)
+	}
+	s.streamsMux.Unlock()
+	
+	// 채팅방이 비어있고 생성자가 아닌 경우 채팅방 삭제
+	if len(room.Users) == 0 && room.CreatorID != req.UserId {
+		delete(s.rooms, req.RoomId)
+	}
+	
+	return &pb.LeaveRoomResponse{
+		Success: true,
+	}, nil
+}
+
+// 채팅방 목록 조회 요청 처리
+func (s *ChatService) GetRooms(ctx context.Context, req *pb.GetRoomsRequest) (*pb.GetRoomsResponse, error) {
+	s.roomsMux.RLock()
+	defer s.roomsMux.RUnlock()
+	
+	var rooms []*pb.Room
+	for _, room := range s.rooms {
+		rooms = append(rooms, &pb.Room{
+			RoomId:    room.ID,
+			Name:      room.Name,
+			CreatorId: room.CreatorID,
+			UserCount: int32(len(room.Users)),
+			CreatedAt: room.Created.Unix(),
+		})
+	}
+	
+	return &pb.GetRoomsResponse{
+		Rooms: rooms,
+	}, nil
+}
+
+// 사용자 상태 변경 요청 처리
+func (s *ChatService) UpdateUserStatus(ctx context.Context, req *pb.UpdateUserStatusRequest) (*pb.UpdateUserStatusResponse, error) {
+	s.usersMux.Lock()
+	defer s.usersMux.Unlock()
+	
+	user, exists := s.users[req.UserId]
+	if !exists {
+		return &pb.UpdateUserStatusResponse{
+			Success: false,
+			Error:   "존재하지 않는 사용자입니다",
+		}, nil
+	}
+	
+	user.Online = req.Online
+	
+	// 상태 변경 알림 메시지 브로드캐스트
+	statusMsg := "오프라인"
+	if req.Online {
+		statusMsg = "온라인"
+	}
+	
+	// 모든 채팅방에 상태 변경 알림
+	s.roomsMux.RLock()
+	for roomID := range s.rooms {
+		message := &pb.ChatMessage{
+			MessageId: uuid.New().String(),
+			UserId:    "system",
+			Username:  "시스템",
+			Message:   fmt.Sprintf("%s님이 %s 상태가 되었습니다", user.Username, statusMsg),
+			RoomId:    roomID,
+			Timestamp: time.Now().Unix(),
+		}
+		s.broadcastMessage(roomID, message)
+	}
+	s.roomsMux.RUnlock()
+	
+	return &pb.UpdateUserStatusResponse{
+		Success: true,
+	}, nil
 } 
