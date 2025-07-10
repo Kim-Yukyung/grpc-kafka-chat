@@ -173,7 +173,6 @@ func (s *ChatService) SubscribeToMessages(req *pb.SubscribeRequest, stream pb.Ch
 		s.roomsMux.RUnlock()
 		return fmt.Errorf("채팅방에 참여하지 않은 사용자입니다")
 	}
-	s.roomsMux.RUnlock()
 	
 	// 스트림 채널 생성
 	messageChan := make(chan *pb.ChatMessage, 100)
@@ -185,6 +184,7 @@ func (s *ChatService) SubscribeToMessages(req *pb.SubscribeRequest, stream pb.Ch
 	}
 	s.streams[req.RoomId][req.UserId] = messageChan
 	s.streamsMux.Unlock()
+	s.roomsMux.RUnlock()
 	
 	// 연결 해제 시 정리
 	defer func() {
