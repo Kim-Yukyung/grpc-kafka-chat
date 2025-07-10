@@ -126,7 +126,6 @@ func (s *ChatService) SendMessage(ctx context.Context, req *pb.SendMessageReques
 			Error:   "채팅방에 참여하지 않은 사용자입니다",
 		}, nil
 	}
-	s.roomsMux.RUnlock()
 	
 	// 메시지 생성
 	messageID := uuid.New().String()
@@ -138,6 +137,7 @@ func (s *ChatService) SendMessage(ctx context.Context, req *pb.SendMessageReques
 		RoomId:    req.RoomId,
 		Timestamp: time.Now().Unix(),
 	}
+	s.roomsMux.RUnlock()
 	
 	// 메시지를 해당 채팅방의 모든 구독자에게 전송
 	s.broadcastMessage(req.RoomId, message)
@@ -359,9 +359,11 @@ func (s *ChatService) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (
 	}
 	s.streamsMux.Unlock()
 	
-	// 채팅방이 비어있고 생성자가 아닌 경우 채팅방 삭제
-	if len(room.Users) == 0 && room.CreatorID != req.UserId {
+	// 채팅방이 비어있으면 삭제
+	if len(room.Users) == 0 {
 		delete(s.rooms, req.RoomId)
+		// 관련 스트림도 정리
+		delete(s.streams, req.RoomId)
 	}
 	
 	return &pb.LeaveRoomResponse{
@@ -411,9 +413,13 @@ func (s *ChatService) UpdateUserStatus(ctx context.Context, req *pb.UpdateUserSt
 		statusMsg = "온라인"
 	}
 	
-	// 모든 채팅방에 상태 변경 알림
+	// 사용자가 참여 중인 채팅방에만 상태 변경 알림
 	s.roomsMux.RLock()
-	for roomID := range s.rooms {
+	for roomID, room := range s.rooms {
+		// 사용자가 참여 중인 방에만 알림
+		if _, isMember := room.Users[req.UserId]; !isMember {
+			continue
+		}
 		message := &pb.ChatMessage{
 			MessageId: uuid.New().String(),
 			UserId:    "system",
