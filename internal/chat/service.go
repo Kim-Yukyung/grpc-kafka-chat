@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/Kim-Yukyung/grpc-kafka-chat/proto"
+	"github.com/Kim-Yukyung/grpc-kafka-chat/internal/kafka"
 )
 
 // 실시간 채팅 서비스 구현체
@@ -31,6 +32,17 @@ type ChatService struct {
 	// room_id -> room_info
 	rooms    map[string]*Room
 	roomsMux sync.RWMutex
+	
+	// Kafka 프로듀서
+	producer *kafka.KafkaProducer
+	
+	// Kafka 컨슈머
+	consumer *kafka.KafkaConsumer
+	
+	// Kafka 설정
+	kafkaBrokers []string
+	messageTopic  string
+	eventTopic    string
 }
 
 // 사용자 정보 구조체
@@ -51,12 +63,86 @@ type Room struct {
 }
 
 // 새로운 채팅 서비스 인스턴스 생성
-func NewChatService() *ChatService {
-	return &ChatService{
-		users:   make(map[string]*User),
-		streams: make(map[string]map[string]chan *pb.ChatMessage),
-		rooms:   make(map[string]*Room),
+func NewChatService(kafkaBrokers []string) *ChatService {
+	// ChatService 구조체 초기화
+	service := &ChatService{
+		users:         make(map[string]*User),
+		streams:       make(map[string]map[string]chan *pb.ChatMessage),
+		rooms:         make(map[string]*Room),
+		kafkaBrokers:  kafkaBrokers,
+		messageTopic:  "chat-messages",
+		eventTopic:    "chat-events",
 	}
+	
+	// Kafka 프로듀서 초기화
+	if len(kafkaBrokers) > 0 {
+		service.producer = kafka.NewKafkaProducer(kafkaBrokers)
+		log.Printf("Kafka 프로듀서가 초기화되었습니다. 브로커: %v", kafkaBrokers)
+	}
+	
+	return service
+}
+
+// Kafka 컨슈머 시작
+func (s *ChatService) StartKafkaConsumer(ctx context.Context) error {
+	if len(s.kafkaBrokers) == 0 {
+		log.Println("Kafka 브로커가 설정되지 않아 컨슈머를 시작하지 않습니다.")
+		return nil
+	}
+	
+	// 메시지 컨슈머 시작
+	messageConsumer := kafka.NewKafkaConsumer(s.kafkaBrokers, s.messageTopic, "chat-service-group")
+	
+	// 고루틴으로 메시지 컨슈머 시작
+	go func() {
+		if err := messageConsumer.ConsumeMessages(ctx, s.handleKafkaMessage); err != nil {
+			log.Printf("메시지 컨슈머 오류: %v", err)
+		}
+	}()
+	
+	// 이벤트 컨슈머 시작
+	eventConsumer := kafka.NewKafkaConsumer(s.kafkaBrokers, s.eventTopic, "chat-service-events-group")
+	
+	// 고루틴으로 이벤트 컨슈머 시작
+	go func() {
+		if err := eventConsumer.ConsumeEvents(ctx, s.handleKafkaEvent); err != nil {
+			log.Printf("이벤트 컨슈머 오류: %v", err)
+		}
+	}()
+	
+	log.Printf("Kafka 컨슈머가 시작되었습니다. 메시지 토픽: %s, 이벤트 토픽: %s", s.messageTopic, s.eventTopic)
+	return nil
+}
+
+// Kafka에서 받은 메시지를 처리
+func (s *ChatService) handleKafkaMessage(message *pb.ChatMessage) error {
+	log.Printf("Kafka에서 메시지 수신: %s", message.MessageId)
+	
+	// Kafka에서 받은 메시지는 다시 브로드캐스트하지 않음
+	// (이미 gRPC로 전송되었으므로 중복 방지)
+
+	return nil
+}
+
+// Kafka에서 받은 이벤트를 처리
+func (s *ChatService) handleKafkaEvent(eventType string, roomID string, userID string, data map[string]interface{}) error {
+	log.Printf("Kafka에서 이벤트 수신: %s (방: %s, 사용자: %s)", eventType, roomID, userID)
+	
+	// 이벤트 타입에 따른 처리
+	switch eventType {
+	case "room_created":
+		log.Printf("채팅방 생성 이벤트: %s", roomID)
+	case "user_joined":
+		log.Printf("사용자 참여 이벤트: %s -> %s", userID, roomID)
+	case "user_left":
+		log.Printf("사용자 나가기 이벤트: %s -> %s", userID, roomID)
+	case "room_deleted":
+		log.Printf("채팅방 삭제 이벤트: %s", roomID)
+	default:
+		log.Printf("알 수 없는 이벤트 타입: %s", eventType)
+	}
+	
+	return nil
 }
 
 // 사용자 등록 요청 처리
@@ -138,6 +224,15 @@ func (s *ChatService) SendMessage(ctx context.Context, req *pb.SendMessageReques
 		Timestamp: time.Now().Unix(),
 	}
 	s.roomsMux.RUnlock()
+	
+	// Kafka에 메시지 발행 (비동기)
+	if s.producer != nil {
+		go func() {
+			if err := s.producer.PublishMessage(context.Background(), s.messageTopic, message); err != nil {
+				log.Printf("Kafka 메시지 발행 실패: %v", err)
+			}
+		}()
+	}
 	
 	// 메시지를 해당 채팅방의 모든 구독자에게 전송
 	s.broadcastMessage(req.RoomId, message)
@@ -235,13 +330,19 @@ func (s *ChatService) broadcastMessage(roomID string, message *pb.ChatMessage) {
 	
 	if streams, exists := s.streams[roomID]; exists {
 		// 채팅방에 참여한 모든 사용자에게 메시지 전송
-		for _, messageChan := range streams {
+		userCount := len(streams)
+		log.Printf("메시지 브로드캐스트 - 방ID: %s, 구독자 수: %d, 메시지: %s", roomID, userCount, message.Message)
+		
+		for userID, messageChan := range streams {
 			select {
 			case messageChan <- message:
+				log.Printf("메시지 전송 성공 - 사용자: %s", userID)
 			default:
-				log.Println("채널이 가득 차서 메시지를 드롭했습니다")
+				log.Printf("채널이 가득 차서 메시지를 드롭했습니다 - 사용자: %s", userID)
 			}
 		}
+	} else {
+		log.Printf("채팅방 %s에 구독자가 없습니다", roomID)
 	}
 }
 
@@ -279,6 +380,18 @@ func (s *ChatService) CreateRoom(ctx context.Context, req *pb.CreateRoomRequest)
 	s.roomsMux.Lock()
 	s.rooms[roomID] = room
 	s.roomsMux.Unlock()
+	
+	// Kafka에 채팅방 생성 이벤트 발행
+	if s.producer != nil {
+		go func() {
+			data := map[string]interface{}{
+				"room_name": req.Name,
+			}
+			if err := s.producer.PublishRoomEvent(context.Background(), s.eventTopic, "room_created", roomID, req.CreatorId, data); err != nil {
+				log.Printf("Kafka 이벤트 발행 실패: %v", err)
+			}
+		}()
+	}
 	
 	return &pb.CreateRoomResponse{
 		Success: true,
@@ -323,6 +436,18 @@ func (s *ChatService) JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*p
 	// 채팅방에 사용자 추가
 	room.Users[req.UserId] = user
 	
+	// Kafka에 채팅방 참여 이벤트 발행
+	if s.producer != nil {
+		go func() {
+			data := map[string]interface{}{
+				"username": user.Username,
+			}
+			if err := s.producer.PublishRoomEvent(context.Background(), s.eventTopic, "user_joined", req.RoomId, req.UserId, data); err != nil {
+				log.Printf("Kafka 이벤트 발행 실패: %v", err)
+			}
+		}()
+	}
+	
 	return &pb.JoinRoomResponse{
 		Success: true,
 	}, nil
@@ -330,6 +455,17 @@ func (s *ChatService) JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*p
 
 // 채팅방 나가기 요청 처리
 func (s *ChatService) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (*pb.LeaveRoomResponse, error) {
+	// user 정보 가져오기
+	s.usersMux.RLock()
+	user, userExists := s.users[req.UserId]
+	s.usersMux.RUnlock()
+	if !userExists {
+		return &pb.LeaveRoomResponse{
+			Success: false,
+			Error:   "존재하지 않는 사용자입니다",
+		}, nil
+	}
+
 	s.roomsMux.Lock()
 	defer s.roomsMux.Unlock()
 	
@@ -359,11 +495,32 @@ func (s *ChatService) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (
 	}
 	s.streamsMux.Unlock()
 	
+	// Kafka에 채팅방 나가기 이벤트 발행
+	if s.producer != nil {
+		go func() {
+			data := map[string]interface{}{
+				"username": user.Username,
+			}
+			if err := s.producer.PublishRoomEvent(context.Background(), s.eventTopic, "user_left", req.RoomId, req.UserId, data); err != nil {
+				log.Printf("Kafka 이벤트 발행 실패: %v", err)
+			}
+		}()
+	}
+	
 	// 채팅방이 비어있으면 삭제
 	if len(room.Users) == 0 {
 		delete(s.rooms, req.RoomId)
 		// 관련 스트림도 정리
 		delete(s.streams, req.RoomId)
+		
+		// Kafka에 채팅방 삭제 이벤트 발행
+		if s.producer != nil {
+			go func() {
+				if err := s.producer.PublishRoomEvent(context.Background(), s.eventTopic, "room_deleted", req.RoomId, req.UserId, nil); err != nil {
+					log.Printf("Kafka 이벤트 발행 실패: %v", err)
+				}
+			}()
+		}
 	}
 	
 	return &pb.LeaveRoomResponse{
@@ -378,11 +535,15 @@ func (s *ChatService) GetRooms(ctx context.Context, req *pb.GetRoomsRequest) (*p
 	
 	var rooms []*pb.Room
 	for _, room := range s.rooms {
+		userCount := int32(len(room.Users))
+		log.Printf("채팅방 '%s' (ID: %s) - 참여자 수: %d, 참여자: %v", 
+			room.Name, room.ID, userCount, getUsernames(room.Users))
+		
 		rooms = append(rooms, &pb.Room{
 			RoomId:    room.ID,
 			Name:      room.Name,
 			CreatorId: room.CreatorID,
-			UserCount: int32(len(room.Users)),
+			UserCount: userCount,
 			CreatedAt: room.Created.Unix(),
 		})
 	}
@@ -390,6 +551,15 @@ func (s *ChatService) GetRooms(ctx context.Context, req *pb.GetRoomsRequest) (*p
 	return &pb.GetRoomsResponse{
 		Rooms: rooms,
 	}, nil
+}
+
+// 채팅방의 사용자 이름 목록을 반환
+func getUsernames(users map[string]*User) []string {
+	var usernames []string
+	for _, user := range users {
+		usernames = append(usernames, user.Username)
+	}
+	return usernames
 }
 
 // 사용자 상태 변경 요청 처리
