@@ -200,7 +200,7 @@ func (s *ChatService) broadcastMessage(roomID string, message *pb.ChatMessage) {
 			select {
 			case messageChan <- message:
 			default:
-				// 채널이 가득 찬 경우 메시지 드롭
+				log.Println("채널이 가득 차서 메시지를 드롭했습니다")
 			}
 		}
 	}
