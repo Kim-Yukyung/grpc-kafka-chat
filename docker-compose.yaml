@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.4.0
+    image: confluentinc/cp-zookeeper:7.2.15
     hostname: zookeeper
     container_name: zookeeper
     ports:
@@ -15,7 +15,7 @@ services:
       - zookeeper-logs:/var/lib/zookeeper/log
 
   kafka:
-    image: confluentinc/cp-kafka:7.4.0
+    image: confluentinc/cp-kafka:7.2.15
     hostname: kafka
     container_name: kafka
     depends_on:
