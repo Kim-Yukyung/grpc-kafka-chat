@@ -337,33 +337,7 @@ body::before {
     gap: 0.5rem;
 }
 
-.user-item {
-    padding: 8px 16px;
-    margin: 2px 0;
-    border-radius: 6px;
-    transition: background-color 0.2s ease;
-}
-
-.user-item:hover {
-    background: #f8f9fa;
-}
-
-.user-name {
-    font-size: 0.9em;
-    color: #495057;
-}
-
-.user-status-indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #28a745;
-    margin-left: 8px;
-}
-
-.user-status-indicator.offline {
-    background: #6c757d;
-} 
+ 
 
 /* 메인 채팅 영역 */
 .chat-main {

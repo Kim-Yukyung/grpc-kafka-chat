@@ -328,6 +328,23 @@ class ChatApp {
         });
     }
 
+    // 방 참여 성공 처리
+    handleRoomJoinSuccess(roomId, roomName) {
+        this.currentRoomId = roomId;
+        this.currentRoomName = roomName;
+        
+        // 새로운 WebSocket 연결
+        this.connectWebSocket();
+        
+        this.updateChatHeader();
+        this.clearMessages();
+        this.enableChatInput();
+        this.renderRoomList();
+        
+        // 방 목록을 주기적으로 업데이트하여 새로 생성된 방들이 반영되도록 함
+        setTimeout(() => this.loadRooms(), 1000);
+    }
+
     // 채팅방 참여
     async joinRoom(roomId, roomName) {
         if (!roomId) {
@@ -375,35 +392,14 @@ class ChatApp {
             
             if (data.success) {
                 console.log('채팅방 참여 성공!');
-                this.currentRoomId = roomId;
-                this.currentRoomName = roomName;
-                
-                // 새로운 WebSocket 연결
-                this.connectWebSocket();
-                
-                this.updateChatHeader();
-                this.clearMessages();
-                this.enableChatInput();
-                this.renderRoomList();
-                // 방 목록을 주기적으로 업데이트하여 새로 생성된 방들이 반영되도록 함
-                setTimeout(() => this.loadRooms(), 1000);
+                this.handleRoomJoinSuccess(roomId, roomName);
             } else {
                 console.error('채팅방 참여 실패:', data.error);
                 
                 // "이미 참여 중" 오류인 경우, 서버 상태를 강제로 동기화
                 if (data.error && data.error.includes('이미 참여 중')) {
                     console.log('서버 상태 동기화 시도...');
-                    this.currentRoomId = roomId;
-                    this.currentRoomName = roomName;
-                    
-                    // WebSocket 연결
-                    this.connectWebSocket();
-                    
-                    this.updateChatHeader();
-                    this.clearMessages();
-                    this.enableChatInput();
-                    this.renderRoomList();
-                    this.loadRooms();
+                    this.handleRoomJoinSuccess(roomId, roomName);
                 } else {
                     alert(data.error || '채팅방 참여에 실패했습니다.');
                 }
