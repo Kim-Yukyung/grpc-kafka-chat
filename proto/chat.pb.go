@@ -1129,6 +1129,111 @@ func (x *UpdateUserStatusResponse) GetError() string {
 	return ""
 }
 
+// 방 삭제 요청 및 응답 메시지
+type DeleteRoomRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	RoomId        string                 `protobuf:"bytes,2,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteRoomRequest) Reset() {
+	*x = DeleteRoomRequest{}
+	mi := &file_proto_chat_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteRoomRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteRoomRequest) ProtoMessage() {}
+
+func (x *DeleteRoomRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_chat_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteRoomRequest.ProtoReflect.Descriptor instead.
+func (*DeleteRoomRequest) Descriptor() ([]byte, []int) {
+	return file_proto_chat_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DeleteRoomRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *DeleteRoomRequest) GetRoomId() string {
+	if x != nil {
+		return x.RoomId
+	}
+	return ""
+}
+
+type DeleteRoomResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteRoomResponse) Reset() {
+	*x = DeleteRoomResponse{}
+	mi := &file_proto_chat_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteRoomResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteRoomResponse) ProtoMessage() {}
+
+func (x *DeleteRoomResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_chat_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteRoomResponse.ProtoReflect.Descriptor instead.
+func (*DeleteRoomResponse) Descriptor() ([]byte, []int) {
+	return file_proto_chat_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *DeleteRoomResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DeleteRoomResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_proto_chat_proto protoreflect.FileDescriptor
 
 const file_proto_chat_proto_rawDesc = "" +
@@ -1207,7 +1312,13 @@ const file_proto_chat_proto_rawDesc = "" +
 	"\x06online\x18\x02 \x01(\bR\x06online\"J\n" +
 	"\x18UpdateUserStatusResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error2\xdf\x04\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"E\n" +
+	"\x11DeleteRoomRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
+	"\aroom_id\x18\x02 \x01(\tR\x06roomId\"D\n" +
+	"\x12DeleteRoomResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error2\xa0\x05\n" +
 	"\vChatService\x12B\n" +
 	"\vSendMessage\x12\x18.chat.SendMessageRequest\x1a\x19.chat.SendMessageResponse\x12B\n" +
 	"\x13SubscribeToMessages\x12\x16.chat.SubscribeRequest\x1a\x11.chat.ChatMessage0\x01\x12E\n" +
@@ -1218,7 +1329,9 @@ const file_proto_chat_proto_rawDesc = "" +
 	"\bJoinRoom\x12\x15.chat.JoinRoomRequest\x1a\x16.chat.JoinRoomResponse\x12<\n" +
 	"\tLeaveRoom\x12\x16.chat.LeaveRoomRequest\x1a\x17.chat.LeaveRoomResponse\x129\n" +
 	"\bGetRooms\x12\x15.chat.GetRoomsRequest\x1a\x16.chat.GetRoomsResponse\x12Q\n" +
-	"\x10UpdateUserStatus\x12\x1d.chat.UpdateUserStatusRequest\x1a\x1e.chat.UpdateUserStatusResponseB\bZ\x06/protob\x06proto3"
+	"\x10UpdateUserStatus\x12\x1d.chat.UpdateUserStatusRequest\x1a\x1e.chat.UpdateUserStatusResponse\x12?\n" +
+	"\n" +
+	"DeleteRoom\x12\x17.chat.DeleteRoomRequest\x1a\x18.chat.DeleteRoomResponseB\bZ\x06/protob\x06proto3"
 
 var (
 	file_proto_chat_proto_rawDescOnce sync.Once
@@ -1232,7 +1345,7 @@ func file_proto_chat_proto_rawDescGZIP() []byte {
 	return file_proto_chat_proto_rawDescData
 }
 
-var file_proto_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_proto_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_proto_chat_proto_goTypes = []any{
 	(*SendMessageRequest)(nil),       // 0: chat.SendMessageRequest
 	(*SendMessageResponse)(nil),      // 1: chat.SendMessageResponse
@@ -1254,6 +1367,8 @@ var file_proto_chat_proto_goTypes = []any{
 	(*Room)(nil),                     // 17: chat.Room
 	(*UpdateUserStatusRequest)(nil),  // 18: chat.UpdateUserStatusRequest
 	(*UpdateUserStatusResponse)(nil), // 19: chat.UpdateUserStatusResponse
+	(*DeleteRoomRequest)(nil),        // 20: chat.DeleteRoomRequest
+	(*DeleteRoomResponse)(nil),       // 21: chat.DeleteRoomResponse
 }
 var file_proto_chat_proto_depIdxs = []int32{
 	8,  // 0: chat.GetUsersResponse.users:type_name -> chat.User
@@ -1267,17 +1382,19 @@ var file_proto_chat_proto_depIdxs = []int32{
 	13, // 8: chat.ChatService.LeaveRoom:input_type -> chat.LeaveRoomRequest
 	15, // 9: chat.ChatService.GetRooms:input_type -> chat.GetRoomsRequest
 	18, // 10: chat.ChatService.UpdateUserStatus:input_type -> chat.UpdateUserStatusRequest
-	1,  // 11: chat.ChatService.SendMessage:output_type -> chat.SendMessageResponse
-	3,  // 12: chat.ChatService.SubscribeToMessages:output_type -> chat.ChatMessage
-	5,  // 13: chat.ChatService.RegisterUser:output_type -> chat.RegisterUserResponse
-	7,  // 14: chat.ChatService.GetUsers:output_type -> chat.GetUsersResponse
-	10, // 15: chat.ChatService.CreateRoom:output_type -> chat.CreateRoomResponse
-	12, // 16: chat.ChatService.JoinRoom:output_type -> chat.JoinRoomResponse
-	14, // 17: chat.ChatService.LeaveRoom:output_type -> chat.LeaveRoomResponse
-	16, // 18: chat.ChatService.GetRooms:output_type -> chat.GetRoomsResponse
-	19, // 19: chat.ChatService.UpdateUserStatus:output_type -> chat.UpdateUserStatusResponse
-	11, // [11:20] is the sub-list for method output_type
-	2,  // [2:11] is the sub-list for method input_type
+	20, // 11: chat.ChatService.DeleteRoom:input_type -> chat.DeleteRoomRequest
+	1,  // 12: chat.ChatService.SendMessage:output_type -> chat.SendMessageResponse
+	3,  // 13: chat.ChatService.SubscribeToMessages:output_type -> chat.ChatMessage
+	5,  // 14: chat.ChatService.RegisterUser:output_type -> chat.RegisterUserResponse
+	7,  // 15: chat.ChatService.GetUsers:output_type -> chat.GetUsersResponse
+	10, // 16: chat.ChatService.CreateRoom:output_type -> chat.CreateRoomResponse
+	12, // 17: chat.ChatService.JoinRoom:output_type -> chat.JoinRoomResponse
+	14, // 18: chat.ChatService.LeaveRoom:output_type -> chat.LeaveRoomResponse
+	16, // 19: chat.ChatService.GetRooms:output_type -> chat.GetRoomsResponse
+	19, // 20: chat.ChatService.UpdateUserStatus:output_type -> chat.UpdateUserStatusResponse
+	21, // 21: chat.ChatService.DeleteRoom:output_type -> chat.DeleteRoomResponse
+	12, // [12:22] is the sub-list for method output_type
+	2,  // [2:12] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -1294,7 +1411,7 @@ func file_proto_chat_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_chat_proto_rawDesc), len(file_proto_chat_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -28,6 +28,7 @@ const (
 	ChatService_LeaveRoom_FullMethodName           = "/chat.ChatService/LeaveRoom"
 	ChatService_GetRooms_FullMethodName            = "/chat.ChatService/GetRooms"
 	ChatService_UpdateUserStatus_FullMethodName    = "/chat.ChatService/UpdateUserStatus"
+	ChatService_DeleteRoom_FullMethodName          = "/chat.ChatService/DeleteRoom"
 )
 
 // ChatServiceClient is the client API for ChatService service.
@@ -54,6 +55,8 @@ type ChatServiceClient interface {
 	GetRooms(ctx context.Context, in *GetRoomsRequest, opts ...grpc.CallOption) (*GetRoomsResponse, error)
 	// 사용자 온라인 상태 변경
 	UpdateUserStatus(ctx context.Context, in *UpdateUserStatusRequest, opts ...grpc.CallOption) (*UpdateUserStatusResponse, error)
+	// 방 삭제
+	DeleteRoom(ctx context.Context, in *DeleteRoomRequest, opts ...grpc.CallOption) (*DeleteRoomResponse, error)
 }
 
 type chatServiceClient struct {
@@ -163,6 +166,16 @@ func (c *chatServiceClient) UpdateUserStatus(ctx context.Context, in *UpdateUser
 	return out, nil
 }
 
+func (c *chatServiceClient) DeleteRoom(ctx context.Context, in *DeleteRoomRequest, opts ...grpc.CallOption) (*DeleteRoomResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteRoomResponse)
+	err := c.cc.Invoke(ctx, ChatService_DeleteRoom_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ChatServiceServer is the server API for ChatService service.
 // All implementations must embed UnimplementedChatServiceServer
 // for forward compatibility.
@@ -187,6 +200,8 @@ type ChatServiceServer interface {
 	GetRooms(context.Context, *GetRoomsRequest) (*GetRoomsResponse, error)
 	// 사용자 온라인 상태 변경
 	UpdateUserStatus(context.Context, *UpdateUserStatusRequest) (*UpdateUserStatusResponse, error)
+	// 방 삭제
+	DeleteRoom(context.Context, *DeleteRoomRequest) (*DeleteRoomResponse, error)
 	mustEmbedUnimplementedChatServiceServer()
 }
 
@@ -223,6 +238,9 @@ func (UnimplementedChatServiceServer) GetRooms(context.Context, *GetRoomsRequest
 }
 func (UnimplementedChatServiceServer) UpdateUserStatus(context.Context, *UpdateUserStatusRequest) (*UpdateUserStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateUserStatus not implemented")
+}
+func (UnimplementedChatServiceServer) DeleteRoom(context.Context, *DeleteRoomRequest) (*DeleteRoomResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteRoom not implemented")
 }
 func (UnimplementedChatServiceServer) mustEmbedUnimplementedChatServiceServer() {}
 func (UnimplementedChatServiceServer) testEmbeddedByValue()                     {}
@@ -400,6 +418,24 @@ func _ChatService_UpdateUserStatus_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChatService_DeleteRoom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteRoomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).DeleteRoom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_DeleteRoom_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).DeleteRoom(ctx, req.(*DeleteRoomRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ChatService_ServiceDesc is the grpc.ServiceDesc for ChatService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -438,6 +474,10 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateUserStatus",
 			Handler:    _ChatService_UpdateUserStatus_Handler,
+		},
+		{
+			MethodName: "DeleteRoom",
+			Handler:    _ChatService_DeleteRoom_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gRPC Kafka Chat</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 로그인 화면 -->
+        <div id="login-screen" class="screen">
+            <div class="login-container">
+                <h1>gRPC Kafka Chat</h1>
+                <p class="login-subtitle">실시간 채팅을 시작해보세요</p>
+                <div class="login-form">
+                    <input type="text" id="username-input" placeholder="사용자 이름을 입력하세요" maxlength="20">
+                    <button id="login-btn">
+                        <span>채팅 시작</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 채팅 화면 -->
+        <div id="chat-screen" class="screen hidden">
+            <div class="chat-container">
+                <!-- 사이드바 -->
+                <div class="sidebar">
+                    <div class="user-info">
+                        <div class="user-avatar">
+                            <span id="user-avatar-text"></span>
+                        </div>
+                        <div class="user-details">
+                            <div id="current-username"></div>
+                            <div class="user-status online">온라인</div>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>채팅방</h3>
+                        <div class="room-actions">
+                            <button id="create-room-btn" class="btn-secondary">방 만들기</button>
+                        </div>
+                        <div id="room-list" class="room-list"></div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>사용자</h3>
+                        <div id="user-list" class="user-list"></div>
+                    </div>
+                </div>
+
+                <!-- 메인 채팅 영역 -->
+                <div class="chat-main">
+                    <div class="chat-header">
+                        <div class="room-info">
+                            <h2 id="current-room-name">채팅방을 선택하세요</h2>
+                            <span id="room-user-count"></span>
+                        </div>
+                        <div class="room-actions">
+                            <button id="leave-room-btn" class="btn-secondary" disabled>방 나가기</button>
+                        </div>
+                    </div>
+
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="welcome-message">
+                            <h3>채팅방에 참여하세요!</h3>
+                            <p>왼쪽에서 채팅방을 선택하거나 새로운 방을 만들어보세요.</p>
+                        </div>
+                    </div>
+
+                    <div class="chat-input">
+                        <div class="input-container">
+                            <input type="text" id="message-input" placeholder="메시지를 입력하세요..." disabled>
+                            <button id="send-btn" disabled>전송</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 방 만들기 모달 -->
+        <div id="create-room-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>새 채팅방 만들기</h3>
+                <input type="text" id="room-name-input" placeholder="방 이름을 입력하세요" maxlength="30">
+                <div class="modal-actions">
+                    <button id="create-room-confirm" class="btn-primary">만들기</button>
+                    <button id="create-room-cancel" class="btn-secondary">취소</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html> 
