@@ -43,6 +43,12 @@ type ChatService struct {
 	kafkaBrokers []string
 	messageTopic  string
 	eventTopic    string
+	
+	// WebSocket 설정
+	wsHub interface {
+		BroadcastMessage(message *pb.ChatMessage)
+		BroadcastRoomUpdate(room *pb.Room)
+	}
 }
 
 // 사용자 정보 구조체
@@ -74,13 +80,44 @@ func NewChatService(kafkaBrokers []string) *ChatService {
 		eventTopic:    "chat-events",
 	}
 	
-	// Kafka 프로듀서 초기화
+	// Kafka가 설정된 경우 Kafka 프로듀서 초기화
 	if len(kafkaBrokers) > 0 {
 		service.producer = kafka.NewKafkaProducer(kafkaBrokers)
 		log.Printf("Kafka 프로듀서가 초기화되었습니다. 브로커: %v", kafkaBrokers)
+	} else {
+		log.Printf("Kafka 브로커가 설정되지 않아 Kafka 기능을 비활성화합니다.")
 	}
 	
+	// 기본 채팅방 생성
+	service.createDefaultRoom()
+	
 	return service
+}
+
+// 기본 채팅방 생성
+func (s *ChatService) createDefaultRoom() {
+	defaultRoomID := "general"
+	defaultRoom := &Room{
+		ID:        defaultRoomID,
+		Name:      "일반",
+		CreatorID: "system",
+		Users:     make(map[string]*User),
+		Created:   time.Now(),
+	}
+	
+	s.roomsMux.Lock()
+	s.rooms[defaultRoomID] = defaultRoom
+	s.roomsMux.Unlock()
+	
+	log.Printf("기본 채팅방이 생성되었습니다: %s", defaultRoom.Name)
+}
+
+// WebSocket 허브 설정
+func (s *ChatService) SetWebSocketHub(hub interface {
+	BroadcastMessage(message *pb.ChatMessage)
+	BroadcastRoomUpdate(room *pb.Room)
+}) {
+	s.wsHub = hub
 }
 
 // Kafka 컨슈머 시작
@@ -237,6 +274,11 @@ func (s *ChatService) SendMessage(ctx context.Context, req *pb.SendMessageReques
 	// 메시지를 해당 채팅방의 모든 구독자에게 전송
 	s.broadcastMessage(req.RoomId, message)
 	
+	// WebSocket으로도 브로드캐스트
+	if s.wsHub != nil {
+		s.wsHub.BroadcastMessage(message)
+	}
+	
 	return &pb.SendMessageResponse{
 		Success:   true,
 		MessageId: messageID,
@@ -350,7 +392,7 @@ func (s *ChatService) broadcastMessage(roomID string, message *pb.ChatMessage) {
 func (s *ChatService) CreateRoom(ctx context.Context, req *pb.CreateRoomRequest) (*pb.CreateRoomResponse, error) {
 	// 사용자 존재 확인
 	s.usersMux.RLock()
-	_, exists := s.users[req.CreatorId]
+	user, exists := s.users[req.CreatorId]
 	s.usersMux.RUnlock()
 	
 	if !exists {
@@ -371,15 +413,25 @@ func (s *ChatService) CreateRoom(ctx context.Context, req *pb.CreateRoomRequest)
 	}
 	
 	// 생성자를 채팅방에 자동으로 추가
-	s.usersMux.RLock()
-	if user, userExists := s.users[req.CreatorId]; userExists {
-		room.Users[req.CreatorId] = user
-	}
-	s.usersMux.RUnlock()
+	room.Users[req.CreatorId] = user
 	
 	s.roomsMux.Lock()
 	s.rooms[roomID] = room
 	s.roomsMux.Unlock()
+	
+	// WebSocket으로 방 업데이트 브로드캐스트
+	if s.wsHub != nil {
+		pbRoom := &pb.Room{
+			RoomId:    room.ID,
+			Name:      room.Name,
+			CreatorId: room.CreatorID,
+			UserCount: int32(len(room.Users)),
+			CreatedAt: room.Created.Unix(),
+		}
+		s.wsHub.(interface {
+			BroadcastRoomUpdate(room *pb.Room)
+		}).BroadcastRoomUpdate(pbRoom)
+	}
 	
 	// Kafka에 채팅방 생성 이벤트 발행
 	if s.producer != nil {
@@ -393,6 +445,8 @@ func (s *ChatService) CreateRoom(ctx context.Context, req *pb.CreateRoomRequest)
 		}()
 	}
 	
+	log.Printf("새 채팅방이 생성되었습니다: %s (ID: %s, 생성자: %s)", req.Name, roomID, user.Username)
+	
 	return &pb.CreateRoomResponse{
 		Success: true,
 		RoomId:  roomID,
@@ -401,17 +455,23 @@ func (s *ChatService) CreateRoom(ctx context.Context, req *pb.CreateRoomRequest)
 
 // 채팅방 참여 요청 처리
 func (s *ChatService) JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*pb.JoinRoomResponse, error) {
+	log.Printf("=== JoinRoom 요청 시작 ===")
+	log.Printf("사용자 ID: %s, 방 ID: %s", req.UserId, req.RoomId)
+	
 	// 사용자 존재 확인
 	s.usersMux.RLock()
 	user, userExists := s.users[req.UserId]
 	s.usersMux.RUnlock()
 	
 	if !userExists {
+		log.Printf("사용자가 존재하지 않음: %s", req.UserId)
 		return &pb.JoinRoomResponse{
 			Success: false,
 			Error:   "존재하지 않는 사용자입니다",
 		}, nil
 	}
+	
+	log.Printf("사용자 확인됨: %s (%s)", user.Username, user.ID)
 	
 	// 채팅방 존재 확인
 	s.roomsMux.Lock()
@@ -419,22 +479,28 @@ func (s *ChatService) JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*p
 	
 	room, roomExists := s.rooms[req.RoomId]
 	if !roomExists {
+		log.Printf("채팅방이 존재하지 않음: %s", req.RoomId)
 		return &pb.JoinRoomResponse{
 			Success: false,
 			Error:   "존재하지 않는 채팅방입니다",
 		}, nil
 	}
 	
-	// 이미 참여 중인지 확인
+	log.Printf("채팅방 확인됨: %s (%s)", room.Name, room.ID)
+	log.Printf("현재 방 참여자: %v", getUsernames(room.Users))
+	
+	// 이미 참여 중인지 확인 - 이미 참여 중이어도 성공으로 처리
 	if _, alreadyJoined := room.Users[req.UserId]; alreadyJoined {
+		log.Printf("이미 참여 중인 사용자: %s (성공으로 처리)", user.Username)
 		return &pb.JoinRoomResponse{
-			Success: false,
-			Error:   "이미 참여 중인 채팅방입니다",
+			Success: true,
 		}, nil
 	}
 	
 	// 채팅방에 사용자 추가
 	room.Users[req.UserId] = user
+	log.Printf("사용자 추가됨: %s -> %s", user.Username, room.Name)
+	log.Printf("추가 후 방 참여자: %v", getUsernames(room.Users))
 	
 	// Kafka에 채팅방 참여 이벤트 발행
 	if s.producer != nil {
@@ -448,6 +514,7 @@ func (s *ChatService) JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*p
 		}()
 	}
 	
+	log.Printf("=== JoinRoom 요청 성공 ===")
 	return &pb.JoinRoomResponse{
 		Success: true,
 	}, nil
@@ -455,11 +522,15 @@ func (s *ChatService) JoinRoom(ctx context.Context, req *pb.JoinRoomRequest) (*p
 
 // 채팅방 나가기 요청 처리
 func (s *ChatService) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (*pb.LeaveRoomResponse, error) {
+	log.Printf("=== LeaveRoom 요청 시작 ===")
+	log.Printf("사용자 ID: %s, 방 ID: %s", req.UserId, req.RoomId)
+	
 	// user 정보 가져오기
 	s.usersMux.RLock()
 	user, userExists := s.users[req.UserId]
 	s.usersMux.RUnlock()
 	if !userExists {
+		log.Printf("사용자가 존재하지 않음: %s", req.UserId)
 		return &pb.LeaveRoomResponse{
 			Success: false,
 			Error:   "존재하지 않는 사용자입니다",
@@ -471,22 +542,24 @@ func (s *ChatService) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (
 	
 	room, roomExists := s.rooms[req.RoomId]
 	if !roomExists {
+		log.Printf("채팅방이 존재하지 않음: %s", req.RoomId)
 		return &pb.LeaveRoomResponse{
 			Success: false,
 			Error:   "존재하지 않는 채팅방입니다",
 		}, nil
 	}
 	
-	// 사용자가 채팅방에 참여 중인지 확인
+	// 사용자가 채팅방에 참여 중인지 확인 - 참여하지 않아도 성공으로 처리
 	if _, joined := room.Users[req.UserId]; !joined {
+		log.Printf("참여하지 않은 채팅방이지만 성공으로 처리: %s", user.Username)
 		return &pb.LeaveRoomResponse{
-			Success: false,
-			Error:   "참여하지 않은 채팅방입니다",
+			Success: true,
 		}, nil
 	}
 	
 	// 채팅방에서 사용자 제거
 	delete(room.Users, req.UserId)
+	log.Printf("사용자 제거됨: %s -> %s", user.Username, room.Name)
 	
 	// 스트림에서도 제거
 	s.streamsMux.Lock()
@@ -507,11 +580,13 @@ func (s *ChatService) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (
 		}()
 	}
 	
-	// 채팅방이 비어있으면 삭제
-	if len(room.Users) == 0 {
+	// 채팅방이 비어있고 기본 방이 아닌 경우에만 삭제
+	if len(room.Users) == 0 && req.RoomId != "general" {
 		delete(s.rooms, req.RoomId)
 		// 관련 스트림도 정리
+		s.streamsMux.Lock()
 		delete(s.streams, req.RoomId)
+		s.streamsMux.Unlock()
 		
 		// Kafka에 채팅방 삭제 이벤트 발행
 		if s.producer != nil {
@@ -521,8 +596,13 @@ func (s *ChatService) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (
 				}
 			}()
 		}
+		
+		log.Printf("채팅방이 삭제되었습니다: %s", req.RoomId)
+	} else {
+		log.Printf("사용자가 채팅방을 나갔습니다: %s -> %s (남은 사용자: %d)", user.Username, req.RoomId, len(room.Users))
 	}
 	
+	log.Printf("=== LeaveRoom 요청 성공 ===")
 	return &pb.LeaveRoomResponse{
 		Success: true,
 	}, nil
