@@ -8,6 +8,7 @@ class ChatApp {
         this.ws = null;
         this.rooms = [];
         this.users = [];
+        this.roomsRefreshTimeout = null;
         
         this.init();
     }
@@ -341,8 +342,13 @@ class ChatApp {
         this.enableChatInput();
         this.renderRoomList();
         
+        // 기존 타이머가 있으면 정리
+        if (this.roomsRefreshTimeout) {
+            clearTimeout(this.roomsRefreshTimeout);
+        }
+        
         // 방 목록을 주기적으로 업데이트하여 새로 생성된 방들이 반영되도록 함
-        setTimeout(() => this.loadRooms(), 1000);
+        this.roomsRefreshTimeout = setTimeout(() => this.loadRooms(), 1000);
     }
 
     // 채팅방 참여
@@ -475,6 +481,12 @@ class ChatApp {
                 if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
                     console.log('WebSocket 연결을 닫습니다.');
                     this.ws.close();
+                }
+                
+                // 타이머 정리
+                if (this.roomsRefreshTimeout) {
+                    clearTimeout(this.roomsRefreshTimeout);
+                    this.roomsRefreshTimeout = null;
                 }
                 
                 this.currentRoomId = null;
