@@ -32,6 +32,9 @@ service ChatService {
   
   // 사용자 온라인 상태 변경
   rpc UpdateUserStatus(UpdateUserStatusRequest) returns (UpdateUserStatusResponse);
+  
+  // 방 삭제
+  rpc DeleteRoom(DeleteRoomRequest) returns (DeleteRoomResponse);
 }
 
 // 메시지 전송 요청
@@ -159,4 +162,14 @@ message UpdateUserStatusRequest {
 message UpdateUserStatusResponse {
   bool success = 1;      // 성공 여부
   string error = 2;      // 에러 메시지 (실패시)
+} 
+
+// 방 삭제 요청 및 응답 메시지
+message DeleteRoomRequest {
+  string user_id = 1;
+  string room_id = 2;
+}
+message DeleteRoomResponse {
+  bool success = 1;
+  string error = 2;
 } 

@@ -581,26 +581,24 @@ func (s *ChatService) LeaveRoom(ctx context.Context, req *pb.LeaveRoomRequest) (
 	}
 	
 	// 채팅방이 비어있고 기본 방이 아닌 경우에만 삭제
-	if len(room.Users) == 0 && req.RoomId != "general" {
-		delete(s.rooms, req.RoomId)
-		// 관련 스트림도 정리
-		s.streamsMux.Lock()
-		delete(s.streams, req.RoomId)
-		s.streamsMux.Unlock()
-		
-		// Kafka에 채팅방 삭제 이벤트 발행
-		if s.producer != nil {
-			go func() {
-				if err := s.producer.PublishRoomEvent(context.Background(), s.eventTopic, "room_deleted", req.RoomId, req.UserId, nil); err != nil {
-					log.Printf("Kafka 이벤트 발행 실패: %v", err)
-				}
-			}()
-		}
-		
-		log.Printf("채팅방이 삭제되었습니다: %s", req.RoomId)
-	} else {
+	// if len(room.Users) == 0 && req.RoomId != "general" {
+	//     delete(s.rooms, req.RoomId)
+	//     // 관련 스트림도 정리
+	//     s.streamsMux.Lock()
+	//     delete(s.streams, req.RoomId)
+	//     s.streamsMux.Unlock()
+	//     // Kafka에 채팅방 삭제 이벤트 발행
+	//     if s.producer != nil {
+	//         go func() {
+	//             if err := s.producer.PublishRoomEvent(context.Background(), s.eventTopic, "room_deleted", req.RoomId, req.UserId, nil); err != nil {
+	//                 log.Printf("Kafka 이벤트 발행 실패: %v", err)
+	//             }
+	//         }()
+	//     }
+	//     log.Printf("채팅방이 삭제되었습니다: %s", req.RoomId)
+	// } else {
 		log.Printf("사용자가 채팅방을 나갔습니다: %s -> %s (남은 사용자: %d)", user.Username, req.RoomId, len(room.Users))
-	}
+	// }
 	
 	log.Printf("=== LeaveRoom 요청 성공 ===")
 	return &pb.LeaveRoomResponse{
@@ -685,4 +683,58 @@ func (s *ChatService) UpdateUserStatus(ctx context.Context, req *pb.UpdateUserSt
 	return &pb.UpdateUserStatusResponse{
 		Success: true,
 	}, nil
+} 
+
+// 채팅방 삭제 요청 처리
+func (s *ChatService) DeleteRoom(ctx context.Context, req *pb.DeleteRoomRequest) (*pb.DeleteRoomResponse, error) {
+    s.roomsMux.Lock()
+    defer s.roomsMux.Unlock()
+
+    // 기본방은 삭제 불가
+    defaultRoomID := "general"
+    if req.RoomId == defaultRoomID {
+        return &pb.DeleteRoomResponse{
+            Success: false,
+            Error:   "기본 채팅방은 삭제할 수 없습니다.",
+        }, nil
+    }
+
+    room, exists := s.rooms[req.RoomId]
+    if !exists {
+        return &pb.DeleteRoomResponse{
+            Success: false,
+            Error:   "존재하지 않는 채팅방입니다.",
+        }, nil
+    }
+
+    // 생성자만 삭제 가능
+    if room.CreatorID != req.UserId {
+        return &pb.DeleteRoomResponse{
+            Success: false,
+            Error:   "방 생성자만 삭제할 수 있습니다.",
+        }, nil
+    }
+
+    // 방 삭제
+    delete(s.rooms, req.RoomId)
+
+    // 관련 스트림도 정리
+    s.streamsMux.Lock()
+    delete(s.streams, req.RoomId)
+    s.streamsMux.Unlock()
+
+    // Kafka에 채팅방 삭제 이벤트 발행
+    if s.producer != nil {
+        go func() {
+            if err := s.producer.PublishRoomEvent(context.Background(), s.eventTopic, "room_deleted", req.RoomId, req.UserId, nil); err != nil {
+                log.Printf("Kafka 이벤트 발행 실패: %v", err)
+            }
+        }()
+    }
+
+    log.Printf("채팅방이 삭제되었습니다: %s (ID: %s)", room.Name, req.RoomId)
+
+    return &pb.DeleteRoomResponse{
+        Success: true,
+    }, nil
 } 
