@@ -688,11 +688,11 @@ func (s *ChatService) UpdateUserStatus(ctx context.Context, req *pb.UpdateUserSt
 // 채팅방 삭제 요청 처리
 func (s *ChatService) DeleteRoom(ctx context.Context, req *pb.DeleteRoomRequest) (*pb.DeleteRoomResponse, error) {
     s.roomsMux.Lock()
-    defer s.roomsMux.Unlock()
 
     // 기본방은 삭제 불가
     defaultRoomID := "general"
     if req.RoomId == defaultRoomID {
+		s.roomsMux.Unlock()
         return &pb.DeleteRoomResponse{
             Success: false,
             Error:   "기본 채팅방은 삭제할 수 없습니다.",
@@ -701,6 +701,7 @@ func (s *ChatService) DeleteRoom(ctx context.Context, req *pb.DeleteRoomRequest)
 
     room, exists := s.rooms[req.RoomId]
     if !exists {
+		s.roomsMux.Unlock()
         return &pb.DeleteRoomResponse{
             Success: false,
             Error:   "존재하지 않는 채팅방입니다.",
@@ -709,14 +710,25 @@ func (s *ChatService) DeleteRoom(ctx context.Context, req *pb.DeleteRoomRequest)
 
     // 생성자만 삭제 가능
     if room.CreatorID != req.UserId {
+		s.roomsMux.Unlock()
         return &pb.DeleteRoomResponse{
             Success: false,
             Error:   "방 생성자만 삭제할 수 있습니다.",
         }, nil
     }
 
+	// 채팅방에 사용자가 있는 경우 삭제 불가
+    if len(room.Users) > 0 {
+        s.roomsMux.Unlock()
+        return &pb.DeleteRoomResponse{
+            Success: false,
+            Error:   "사용자가 있는 채팅방은 삭제할 수 없습니다.",
+        }, nil
+	}
+
     // 방 삭제
     delete(s.rooms, req.RoomId)
+	s.roomsMux.Unlock()
 
     // 관련 스트림도 정리
     s.streamsMux.Lock()
